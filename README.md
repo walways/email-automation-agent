@@ -180,6 +180,26 @@ status reset
 
 ## 架构图
 
+### 简化流程图（业务视角）
+
+```mermaid
+flowchart TD
+  A[用户邮件触发] --> B[邮件解析]
+  A --> C[指令/代码/参数]
+  B --> D[任务校验]
+  D --> E[调用本地 LLM CLI<br/>Claude Code / Codex]
+  E --> F[生成可执行代码]
+  F --> G[沙箱环境执行]
+  G --> H{执行结果}
+  H -- 成功 --> I[生成结果日志]
+  H -- 失败 --> J[生成错误报告]
+  I --> K[自动邮件回复]
+  J --> K
+  K --> L[用户接收结果]
+```
+
+### 详细流程图（工程视角）
+
 ```mermaid
 flowchart TD
   U[用户提交任务<br/>Email / IM] --> C0[Channel Adapter<br/>channel.Channel]
