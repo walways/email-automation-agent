@@ -60,6 +60,8 @@ type Agent struct {
 	skippedByWhitelist uint64
 	lastTaskAt         time.Time
 	lastTaskSummary    string
+	fetchErrorCount    int
+	nextReconnectAt    time.Time
 	statePath          string
 	mu                 sync.Mutex
 }
@@ -141,6 +143,11 @@ func NewAgent(cfg *config.Config, configPath string) (*Agent, error) {
 			cfg.Executor.MaxOutputSize,
 			cfg.Executor.Sandbox,
 			cfg.Executor.SandboxAllowNetwork,
+			cfg.Executor.SandboxCPUs,
+			cfg.Executor.SandboxMemory,
+			cfg.Executor.SandboxPidsLimit,
+			cfg.Executor.SandboxTmpfsSize,
+			cfg.Executor.SandboxReadOnly,
 		),
 		stopChan:           make(chan struct{}),
 		processedUIDs:      make(map[uint32]struct{}),
@@ -449,6 +456,11 @@ func (a *Agent) maybeReloadConfig() {
 		newCfg.Executor.MaxOutputSize,
 		newCfg.Executor.Sandbox,
 		newCfg.Executor.SandboxAllowNetwork,
+		newCfg.Executor.SandboxCPUs,
+		newCfg.Executor.SandboxMemory,
+		newCfg.Executor.SandboxPidsLimit,
+		newCfg.Executor.SandboxTmpfsSize,
+		newCfg.Executor.SandboxReadOnly,
 	)
 	a.mu.Lock()
 	a.config = newCfg
@@ -482,8 +494,10 @@ func (a *Agent) checkAndProcessEmails() {
 	messages, err := a.msgChannel.FetchLatestMessages(a.config.Email.Inbox, 100)
 	if err != nil {
 		log.Printf("Error fetching emails: %v", err)
+		a.handleFetchError(err)
 		return
 	}
+	a.resetFetchErrorState()
 
 	if len(messages) == 0 {
 		log.Println("No email found in this polling cycle")
@@ -593,6 +607,57 @@ func (a *Agent) checkAndProcessEmails() {
 	}
 
 	wg.Wait()
+}
+
+func (a *Agent) handleFetchError(fetchErr error) {
+	now := time.Now()
+
+	a.mu.Lock()
+	if !a.nextReconnectAt.IsZero() && now.Before(a.nextReconnectAt) {
+		wait := a.nextReconnectAt.Sub(now).Round(time.Second)
+		failures := a.fetchErrorCount
+		a.mu.Unlock()
+		log.Printf("Reconnect backoff active (%d failures), next reconnect attempt in %v", failures, wait)
+		return
+	}
+	a.mu.Unlock()
+
+	if err := a.msgChannel.Reconnect(); err != nil {
+		a.mu.Lock()
+		a.fetchErrorCount++
+		failures := a.fetchErrorCount
+		backoff := reconnectBackoff(failures)
+		a.nextReconnectAt = now.Add(backoff)
+		nextAt := a.nextReconnectAt
+		a.mu.Unlock()
+		log.Printf("Reconnect failed (attempt #%d): %v; next retry at %s", failures, err, nextAt.Format("2006-01-02 15:04:05"))
+		return
+	}
+
+	a.mu.Lock()
+	prevFailures := a.fetchErrorCount
+	a.fetchErrorCount = 0
+	a.nextReconnectAt = time.Time{}
+	a.mu.Unlock()
+	log.Printf("Channel reconnected successfully after fetch error (previous consecutive failures=%d): %v", prevFailures, fetchErr)
+}
+
+func reconnectBackoff(failures int) time.Duration {
+	if failures <= 0 {
+		return time.Second
+	}
+	backoff := time.Second << (failures - 1) // 1s,2s,4s,8s...
+	if backoff > 2*time.Minute {
+		backoff = 2 * time.Minute
+	}
+	return backoff
+}
+
+func (a *Agent) resetFetchErrorState() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.fetchErrorCount = 0
+	a.nextReconnectAt = time.Time{}
 }
 
 func (a *Agent) bootstrapProcessedUIDs() error {
@@ -944,9 +1009,30 @@ func (a *Agent) sendReply(to, subject, body, inReplyTo string) {
 		body,
 	)
 
-	if err := a.msgChannel.SendReply(recipient, subject, htmlBody, inReplyTo); err != nil {
-		log.Printf("Error sending reply: %v", err)
+	// 发送策略：
+	// 1) 优先按线程回复（带 In-Reply-To）
+	// 2) 若失败，重试并在最后一次降级为普通邮件（去掉 In-Reply-To）
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		replyTo := inReplyTo
+		if attempt == 3 {
+			// 某些 SMTP/网关对 In-Reply-To 头较严格，最后一次做降级发送
+			replyTo = ""
+		}
+
+		if err := a.msgChannel.SendReply(recipient, subject, htmlBody, replyTo); err == nil {
+			if attempt > 1 {
+				log.Printf("Reply sent successfully after retry (attempt=%d, downgradedThreadHeader=%t)", attempt, replyTo == "")
+			}
+			return
+		} else {
+			lastErr = err
+			log.Printf("Error sending reply (attempt=%d): %v", attempt, err)
+		}
+
+		time.Sleep(time.Duration(attempt) * time.Second)
 	}
+	log.Printf("Error sending reply after retries: %v", lastErr)
 }
 
 func (a *Agent) sendClarificationRequest(msg *channel.Message, tip, details string) {

@@ -80,6 +80,11 @@ type LLMConfig struct {
 type ExecutorConfig struct {
 	Sandbox             bool          `mapstructure:"sandbox"`
 	SandboxAllowNetwork bool          `mapstructure:"sandbox_allow_network"`
+	SandboxCPUs         string        `mapstructure:"sandbox_cpus"`
+	SandboxMemory       string        `mapstructure:"sandbox_memory"`
+	SandboxPidsLimit    int           `mapstructure:"sandbox_pids_limit"`
+	SandboxTmpfsSize    string        `mapstructure:"sandbox_tmpfs_size"`
+	SandboxReadOnly     bool          `mapstructure:"sandbox_read_only"`
 	Timeout             time.Duration `mapstructure:"timeout"`
 	AllowedLangs        []string      `mapstructure:"allowed_languages"`
 	WorkDir             string        `mapstructure:"work_dir"`
@@ -191,6 +196,18 @@ func (c *Config) Validate() error {
 	// 验证执行器配置
 	if c.Executor.WorkDir == "" {
 		return fmt.Errorf("executor work_dir is required")
+	}
+	if strings.TrimSpace(c.Executor.SandboxCPUs) == "" {
+		c.Executor.SandboxCPUs = "1.0"
+	}
+	if strings.TrimSpace(c.Executor.SandboxMemory) == "" {
+		c.Executor.SandboxMemory = "512m"
+	}
+	if c.Executor.SandboxPidsLimit <= 0 {
+		c.Executor.SandboxPidsLimit = 128
+	}
+	if strings.TrimSpace(c.Executor.SandboxTmpfsSize) == "" {
+		c.Executor.SandboxTmpfsSize = "64m"
 	}
 
 	if c.Email.PollInterval <= 0 {

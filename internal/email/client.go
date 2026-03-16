@@ -470,7 +470,7 @@ func encodeQ(s string) string {
 		} else if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.ContainsRune("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", rune(c)) {
 			buf.WriteByte(c)
 		} else {
-			fmt.Fprintf(&buf, "= %02X", c)
+			fmt.Fprintf(&buf, "=%02X", c)
 		}
 	}
 	return buf.String()

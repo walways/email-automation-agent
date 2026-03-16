@@ -1,15 +1,6 @@
 # Email Automation Agent Configuration
 # QQ 邮箱配置
 
-interaction:
-  provider: "email"  # email / im
-  im:
-    platform: "generic"
-    endpoint: "${IM_ENDPOINT}"
-    bot_id: "${IM_BOT_ID}"
-    bot_token: "${IM_BOT_TOKEN}"
-    poll_interval: 3s
-
 email:
   imap:
     host: "imap.qq.com"
@@ -25,25 +16,28 @@ email:
     use_ssl: true
   inbox: "INBOX"
   poll_interval: 30s
-  max_concurrent_tasks: 3   # 并发处理任务数
-  use_subagent: true        # true=子代理队列模式，长任务不阻塞主轮询
-  subagent_queue_size: 200  # 子代理任务队列长度
-  process_latest_on_startup: false  # false=启动不处理历史邮件；true=启动先处理最新一封
   mark_as_read: true
   allowed_senders:
-    - "trusted-user-1@example.com"
-    - "trusted-user-2@example.com"
+    - "qpf1993@foxmail.com"
+    - "1249973280@qq.com"
 
 llm:
-  provider: "${LLM_PROVIDER}"         # 可选: claude_code / codex
-  command: "${LLM_COMMAND}"           # claude_code=claude, codex=codex
-  model: "qwen3.5-plus"
+  provider: "claude_code"  # 可选: claude_code / anthropic
+  api_key: "${ANTHROPIC_AUTH_TOKEN}"  # provider=anthropic 时需要
+  base_url: "${ANTHROPIC_BASE_URL}"   # provider=anthropic 时可选
+  command: "claude"                   # provider=claude_code 时使用
+  model: "kimi-k2.5"
   max_tokens: 4096
   timeout: 300s
 
 executor:
   sandbox: true
   sandbox_allow_network: true  # true=允许联网（适合天气/联网查询）；false=禁网更安全
+  sandbox_cpus: "2.0"          # 调试增强：容器 CPU 上限
+  sandbox_memory: "2g"         # 调试增强：容器内存上限
+  sandbox_pids_limit: 512      # 调试增强：进程数上限
+  sandbox_tmpfs_size: "256m"   # 调试增强：/tmp 大小
+  sandbox_read_only: false     # 调试增强：关闭只读根（更灵活，但安全性下降）
   timeout: 300s
   allowed_languages: ["python", "go", "bash", "javascript", "typescript"]
   work_dir: "/tmp/email-automation-sandbox"
@@ -54,16 +48,3 @@ logging:
   file: "/tmp/email-automation-agent.log"
   max_size: 10485760  # 10MB
   max_backups: 3
-
-cache:
-  enabled: true
-  ttl: 72h
-  max_entries: 200
-  llm_validate_on_miss: true
-
-status_report:
-  enabled: true
-  interval: 1h
-  recipients:
-    - "ops-1@example.com"
-    - "ops-2@example.com"

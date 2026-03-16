@@ -112,6 +112,11 @@ llm:
 executor:
   sandbox: true
   sandbox_allow_network: true
+  sandbox_cpus: "2.0"
+  sandbox_memory: "2g"
+  sandbox_pids_limit: 512
+  sandbox_tmpfs_size: "256m"
+  sandbox_read_only: false
   timeout: 300s
   allowed_languages: ["python", "go", "bash", "javascript", "typescript"]
   work_dir: "/tmp/email-automation-sandbox"

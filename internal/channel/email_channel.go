@@ -1,11 +1,16 @@
 package channel
 
-import "email-automation-agent/internal/email"
+import (
+	"sync"
+
+	"email-automation-agent/internal/email"
+)
 
 // EmailChannel 基于 IMAP/SMTP 的通道实现。
 type EmailChannel struct {
 	imap *email.IMAPClient
 	smtp *email.SMTPClient
+	mu   sync.Mutex
 }
 
 func NewEmailChannel(
@@ -19,15 +24,28 @@ func NewEmailChannel(
 }
 
 func (c *EmailChannel) Connect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.imap.Connect()
 }
 
 func (c *EmailChannel) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.imap.Close()
 }
 
+func (c *EmailChannel) Reconnect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_ = c.imap.Close()
+	return c.imap.Connect()
+}
+
 func (c *EmailChannel) FetchLatestMessages(inbox string, limit uint32) ([]*Message, error) {
+	c.mu.Lock()
 	messages, err := c.imap.FetchLatestMessages(inbox, limit)
+	c.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -52,13 +70,19 @@ func (c *EmailChannel) FetchLatestMessages(inbox string, limit uint32) ([]*Messa
 }
 
 func (c *EmailChannel) MarkAsRead(id uint32) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.imap.MarkAsRead(id)
 }
 
 func (c *EmailChannel) SendReply(to, subject, htmlBody, inReplyTo string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.smtp.SendEmail(to, subject, htmlBody, inReplyTo)
 }
 
 func (c *EmailChannel) UpdateSMTP(host string, port int, username, password string, useSSL bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.smtp = email.NewSMTPClient(host, port, username, password, useSSL)
 }

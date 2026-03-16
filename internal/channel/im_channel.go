@@ -65,6 +65,10 @@ func (c *IMChannel) Close() error {
 	return nil
 }
 
+func (c *IMChannel) Reconnect() error {
+	return c.Connect()
+}
+
 func (c *IMChannel) FetchLatestMessages(_ string, limit uint32) ([]*Message, error) {
 	if limit == 0 {
 		limit = 50

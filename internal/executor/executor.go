@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,10 +30,27 @@ type Executor struct {
 	maxOutputSize       int64
 	sandbox             bool
 	sandboxAllowNetwork bool
+	sandboxCPUs         string
+	sandboxMemory       string
+	sandboxPidsLimit    int
+	sandboxTmpfsSize    string
+	sandboxReadOnly     bool
 }
 
 // NewExecutor 创建执行器
-func NewExecutor(workDir string, timeout time.Duration, allowedLangs []string, maxOutputSize int64, sandbox bool, sandboxAllowNetwork bool) *Executor {
+func NewExecutor(
+	workDir string,
+	timeout time.Duration,
+	allowedLangs []string,
+	maxOutputSize int64,
+	sandbox bool,
+	sandboxAllowNetwork bool,
+	sandboxCPUs string,
+	sandboxMemory string,
+	sandboxPidsLimit int,
+	sandboxTmpfsSize string,
+	sandboxReadOnly bool,
+) *Executor {
 	return &Executor{
 		workDir:             workDir,
 		timeout:             timeout,
@@ -40,6 +58,11 @@ func NewExecutor(workDir string, timeout time.Duration, allowedLangs []string, m
 		maxOutputSize:       maxOutputSize,
 		sandbox:             sandbox,
 		sandboxAllowNetwork: sandboxAllowNetwork,
+		sandboxCPUs:         sandboxCPUs,
+		sandboxMemory:       sandboxMemory,
+		sandboxPidsLimit:    sandboxPidsLimit,
+		sandboxTmpfsSize:    sandboxTmpfsSize,
+		sandboxReadOnly:     sandboxReadOnly,
 	}
 }
 
@@ -241,14 +264,21 @@ func (e *Executor) prepareDockerCommand(image string, command []string, extraArg
 	args := []string{
 		"run",
 		"--rm",
-		"--cpus", "1.0",
-		"--memory", "512m",
-		"--pids-limit", "128",
-		"--read-only",
-		"--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+		"--cpus", e.sandboxCPUs,
+		"--memory", e.sandboxMemory,
+		"--pids-limit", strconv.Itoa(e.sandboxPidsLimit),
 		"-v", mount,
 		"-w", "/workspace",
 	}
+	if e.sandboxReadOnly {
+		args = append(args, "--read-only")
+	}
+	tmpfs := "/tmp:rw,nosuid,size=" + e.sandboxTmpfsSize
+	if e.sandboxReadOnly {
+		// 只读根文件系统下，为 /tmp 添加 noexec 进一步收敛执行面
+		tmpfs = "/tmp:rw,noexec,nosuid,size=" + e.sandboxTmpfsSize
+	}
+	args = append(args, "--tmpfs", tmpfs)
 	if !e.sandboxAllowNetwork {
 		args = append(args, "--network", "none")
 	}

@@ -19,6 +19,7 @@ type Message struct {
 type Channel interface {
 	Connect() error
 	Close() error
+	Reconnect() error
 	FetchLatestMessages(inbox string, limit uint32) ([]*Message, error)
 	MarkAsRead(id uint32) error
 	SendReply(to, subject, htmlBody, inReplyTo string) error
